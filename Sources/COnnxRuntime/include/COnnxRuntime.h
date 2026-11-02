@@ -29,6 +29,16 @@ extern "C" {
 
 typedef struct DalOrtSession DalOrtSession;
 
+// Where the runtime's own messages go. With a logger installed, every message
+// at every severity comes here instead of standard error. `severity` is ORT's:
+// 0 verbose, 1 info, 2 warning, 3 error, 4 fatal. Install the logger before
+// the first session: ONNX Runtime keeps one environment per process, the
+// first session creates it with the logger of the moment, and every session
+// shares it until the last one is freed. An environment created without a
+// logger writes warnings and errors to standard error until it is destroyed.
+typedef void (*DalOrtLogFn)(int severity, const char* message);
+void dal_ort_set_logger(DalOrtLogFn fn);
+
 // Accelerator bitset, mirroring CLiteRt's so callers use one vocabulary:
 // 1 = CPU, 2 = GPU, 4 = NPU. Requesting either accelerator is always safe: the
 // shim adds the provider when the platform has it and otherwise builds a CPU

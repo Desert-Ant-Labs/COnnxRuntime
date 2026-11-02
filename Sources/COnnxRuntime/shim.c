@@ -39,6 +39,35 @@ struct DalOrtSession {
   void** out_copy;
 };
 
+// The runtime's messages, routed to the caller's logger (see COnnxRuntime.h).
+// The environment is created at the lowest severity so the logger sees every
+// message and decides what to keep. A logger removed while an environment
+// lives leaves the warnings and errors where they were going.
+static DalOrtLogFn g_log = NULL;
+
+void dal_ort_set_logger(DalOrtLogFn fn) { g_log = fn; }
+
+static void ORT_API_CALL ort_log(void* param, OrtLoggingLevel severity,
+                                 const char* category, const char* logid,
+                                 const char* code_location, const char* message) {
+  (void)param; (void)category; (void)code_location;
+  if (!message) return;
+  DalOrtLogFn log = g_log;
+  if (log) {
+    log((int)severity, message);
+  } else if (severity >= ORT_LOGGING_LEVEL_WARNING) {
+    fprintf(stderr, "[%c:onnxruntime:%s] %s\n", "VIWEF"[severity], logid ? logid : "", message);
+  }
+}
+
+static OrtStatus* create_env(const OrtApi* api, OrtEnv** env) {
+  if (g_log) {
+    return api->CreateEnvWithCustomLogger(ort_log, NULL, ORT_LOGGING_LEVEL_VERBOSE,
+                                          "desert-ant", env);
+  }
+  return api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "desert-ant", env);
+}
+
 static void set_err(char* errbuf, int len, const char* msg) {
   if (errbuf && len > 0) {
     strncpy(errbuf, msg, (size_t)(len - 1));
@@ -187,8 +216,7 @@ DalOrtSession* dal_ort_create(const char* path, int accelerator,
   }
   const OrtApi* api = s->api;
 
-  if (check(api, api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "desert-ant", &s->env),
-            errbuf, errbuf_len, "CreateEnv")) goto fail;
+  if (check(api, create_env(api, &s->env), errbuf, errbuf_len, "CreateEnv")) goto fail;
   if (check(api, api->CreateSessionOptions(&s->options),
             errbuf, errbuf_len, "CreateSessionOptions")) goto fail;
 
